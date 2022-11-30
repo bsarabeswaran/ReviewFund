@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import "./App.css";
 import abi from "./utils/ReviewHost.json";
 import 'bootstrap/dist/css/bootstrap.min.css';
+import "./styles.scss";
 var Web3 = require('web3');
 
 //const contractAddress = "0x44625009759Eec6049F9969816AB0420d321e1F7";
@@ -10,6 +11,7 @@ var Web3 = require('web3');
 //const contractAddress = "0x853a7Dc66e0009124103503F32Fb11b7Ffd262f9";
 const contractAddress = "0x6d443c55e567eE21306c5454E3cb42BE498a7e08";
 const contractABI = abi.abi;
+const goerliChainId = 5 // Polygon Mainnet
 
 const getEthereumObject = () => window.ethereum;
 
@@ -27,6 +29,28 @@ const findMetaMaskAccount = async () => {
       method: "eth_requestAccounts",
     });
 
+    // network notification
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: Web3.utils.toHex(goerliChainId) }]
+      });
+    } catch (err) {
+      if (err.code === 4902) {
+        await window.ethereum.request({
+          method: 'wallet_addEthereumChain',
+          params: [
+            {
+              chainName: 'Goerli',
+              chainId: Web3.utils.toHex(goerliChainId),
+              nativeCurrency: { name: 'Goerli ETH', decimals: 18, symbol: 'gorETH' },
+              rpcUrls: ['https://polygon-rpc.com/']
+            }
+          ]
+        });
+      }
+    }
+
     if (accounts.length !== 0) {
       const account = accounts[0];
       console.log("Using account: ", account);
@@ -43,37 +67,42 @@ const findMetaMaskAccount = async () => {
 
 const getProjects = async () => {
   try {
-    const ethereum = getEthereumObject();
+    // const ethereum = getEthereumObject();
 
-    if (ethereum) {
-      const provider = new ethers.providers.Web3Provider(ethereum);
-      const signer = provider.getSigner();
-      const reviewFundContract = new ethers.Contract(contractAddress, contractABI, signer);
+    // if (ethereum) {
+    // const provider = new ethers.providers.Web3Provider(ethereum);
+    // const signer = provider.getSigner();
 
-      let top50 = await reviewFundContract.getProjects();
-      let top50_w_score_and_input = [];
-      for (let i = 0; i < top50.length; ++i) {
-        const score = await reviewFundContract.getScore(top50[i]);
-        const movieObjDiv = (
-          <div className="waveButton shadow p-3 mb-5 bg-white rounded hoverer" key={i}>
-            <b>{ethers.utils.parseBytes32String(top50[i])}</b>
-            <br></br>
-            {await reviewFundContract.getCreator(top50[i])}
-            <br></br>
-            <div className="adder">
-              Score: <b>{score.toString()}</b>
-            </div>
-            <br></br>
-            Add a score:
-            <ScoreAdderComp name={ethers.utils.parseBytes32String(top50[i])} className="adder"></ScoreAdderComp>
-            <br></br>
-            <ExtractEthComp name={ethers.utils.parseBytes32String(top50[i])} className="adder"></ExtractEthComp>
+    // use third-party rpc proider to fetch projects, no need to connect wallet for this
+    const RPC = "https://goerli.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161";
+    const provider = new ethers.providers.JsonRpcProvider(RPC);
+    const reviewFundContract = new ethers.Contract(contractAddress, contractABI, provider);
+    console.log("successfully connect contract");
+
+    let top50 = await reviewFundContract.getProjects();
+    let top50_w_score_and_input = [];
+    for (let i = 0; i < top50.length; ++i) {
+      const score = await reviewFundContract.getScore(top50[i]);
+      const movieObjDiv = (
+        <div className="waveButton shadow p-3 mb-5 bg-white rounded hoverer" key={i}>
+          <b>{ethers.utils.parseBytes32String(top50[i])}</b>
+          <br></br>
+          {await reviewFundContract.getCreator(top50[i])}
+          <br></br>
+          <div className="adder">
+            Score: <b>{score.toString()}</b>
           </div>
-        );
-        top50_w_score_and_input.push(movieObjDiv);
-      }
-      return top50_w_score_and_input;
+          <br></br>
+          Add a score:
+          <ScoreAdderComp name={ethers.utils.parseBytes32String(top50[i])} className="adder"></ScoreAdderComp>
+          <br></br>
+          <ExtractEthComp name={ethers.utils.parseBytes32String(top50[i])} className="adder"></ExtractEthComp>
+        </div>
+      );
+      top50_w_score_and_input.push(movieObjDiv);
     }
+    return top50_w_score_and_input;
+    // }
   } catch (error) {
     console.log(error);
     return Array(0);
@@ -112,6 +141,7 @@ const addScore = async (name, score) => {
       });
     }
   } catch (error) {
+    alert('Web3 Wallet Not connected')
     console.log(error);
   }
 };
@@ -170,7 +200,7 @@ const extractEth = async (name) => {
       console.log((await reviewFundContract.getFundingRaised(Web3.utils.padRight(Web3.utils.asciiToHex(name['name']), 64))).toString());
       // --------------- LOG AMOUNT -----------------
 
-      
+
       // --------------- EXTRACTION -----------------
       await reviewFundContract.extractEth(Web3.utils.padRight(Web3.utils.asciiToHex(name['name']), 64));
       // --------------- EXTRACTION -----------------
@@ -190,13 +220,13 @@ const ExtractEthComp = (name) => {
   return (
     <div className="adder">
       <form onSubmit={handleSubmit}>
-      <button
+        <button
           type="submit"
           className="btn btn-light adder"
         >
           Extract Funds
         </button>
-        </form>
+      </form>
     </div>
   );
 }
@@ -205,6 +235,7 @@ const App = () => {
   const [currentAccount, setCurrentAccount] = useState("");
   const [allProjects, setAllProjects] = useState(Array(0));
   const [textEntered, setTextEntered] = useState("");
+  const [loadingProjects, setLoadingProjects] = useState(true);
 
   // --------------- WALLETCONNECT ------------------
   const walletConnect = async () => {
@@ -229,6 +260,7 @@ const App = () => {
       const toRet = await getProjects();
       console.log(toRet);
       setAllProjects(toRet);
+      setLoadingProjects(false);
     } catch (error) {
       console.error(error);
     }
@@ -256,6 +288,9 @@ const App = () => {
     </div>
   );
 
+  // load projects once after opening the website
+  useEffect(() => { queryProjects() }, []);
+
   // --------------- ADDPROJECT ------------------
 
   return (
@@ -271,17 +306,17 @@ const App = () => {
         {walletConnectButton}
       
         {currentAccount && (addProjectsField)}
-        {currentAccount && (
-          <button className="waveButton" onClick={queryProjects}>
-            Update to get the newest projects
-          </button>
-        )}
-        <div className="grid-grid-container">
+
+        <button className="waveButton" onClick={queryProjects}>
+          Update to get the newest projects
+        </button>
+        {/* loading effect while fetching projects*/}
+        {loadingProjects ? <div className="loader" /> : <div className="grid-grid-container">
           <br></br>
           <div className="grid-container">
             {allProjects}
           </div>
-        </div>
+        </div>}
       </div>
     </div>
   );
